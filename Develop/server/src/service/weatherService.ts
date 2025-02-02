@@ -1,8 +1,9 @@
-import dayjs, { type Dayjs } from 'dayjs';
+import { type Dayjs } from 'dayjs';
 import dotenv from 'dotenv';
+// import axios from 'axios';
+
 dotenv.config();
 
-// TODO: Define an interface for the Coordinates object
 interface Coordinates {
   name: string;
   lat: number;
@@ -11,7 +12,6 @@ interface Coordinates {
   state: string;
 }
 
-// TODO: Define a class for the Weather object
 class Weather {
   city: string;
   date: Dayjs | string;
@@ -20,6 +20,7 @@ class Weather {
   humidity: number;
   icon: string;
   iconDescription: string;
+
   constructor(
     city: string,
     date: Dayjs | string,
@@ -39,45 +40,97 @@ class Weather {
   }
 }
 
-// TODO: Complete the WeatherService class
 class WeatherService {
-  
-  private baseURL?: string;
-
-  private apiKey?: string;
-
-  private city = '';
+  private baseURL: string;
+  private apiKey: string;
 
   constructor() {
-    this.baseURL = process.env.API_BASE_URL || '';
-
-    this.apiKey = process.env.API_KEY || '';
+    this.baseURL = process.env.API_BASE_URL || 'https://api.openweathermap.org';
+    this.apiKey = process.env.API_KEY || 'c38e7aa7d462dedcf86673d38f9ca482';
   }
-  // * Note: The following methods are here as a guide, but you are welcome to provide your own solution.
-  // * Just keep in mind the getWeatherForCity method is being called in your
-  // * 09-Servers-and-APIs/02-Challenge/Develop/server/src/routes/api/weatherRoutes.ts file
+
+  private async fetchLocationData(query: string){
+    try {
+      const response = await fetch(`${this.baseURL}/geo/1.0/direct?q=${encodeURIComponent(query)}&limit=1&appid=${this.apiKey}`);
+      const data = await response.json();
+      
+      if (!data.length) {
+        console.error('No location found for:', query);
+        return null;
+      }
   
-  // * the array of Weather objects you are returning ultimately goes to
-  // * 09-Servers-and-APIs/02-Challenge/Develop/client/src/main.ts
+      return {
+        name: data[0].name,
+        lat: data[0].lat,
+        lon: data[0].lon,
+        country: data[0].country,
+        state: data[0].state || ''
+      };
+    } catch (error) {
+      console.error('Error fetching location data:', error);
+      return null;
+    }
+  }
 
-  // TODO: Create fetchLocationData method
-  // private async fetchLocationData(query: string) {}
-  // TODO: Create destructureLocationData method
-  // private destructureLocationData(locationData: Coordinates): Coordinates {}
-  // TODO: Create buildGeocodeQuery method
-  // private buildGeocodeQuery(): string {}
-  // TODO: Create buildWeatherQuery method
-  // private buildWeatherQuery(coordinates: Coordinates): string {}
-  // TODO: Create fetchAndDestructureLocationData method
-  // private async fetchAndDestructureLocationData() {}
-  // TODO: Create fetchWeatherData method
-  // private async fetchWeatherData(coordinates: Coordinates) {}
-  // TODO: Build parseCurrentWeather method
-  // private parseCurrentWeather(response: any) {}
-  // TODO: Complete buildForecastArray method
-  // private buildForecastArray(currentWeather: Weather, weatherData: any[]) {}
-  // TODO: Complete getWeatherForCity method
-  // async getWeatherForCity(city: string) {}
+  private buildWeatherQuery(coordinates: Coordinates): string {
+    return `${this.baseURL}/data/2.5/forecast?lat=${coordinates.lat}&lon=${coordinates.lon}&units=imperial&appid=${this.apiKey}`;
+  }
+
+  private async fetchWeatherData(coordinates: Coordinates): Promise<any | null> {
+    try {
+      const url = this.buildWeatherQuery(coordinates);
+
+      const response = await fetch(url);
+      return response.json()
+    } catch (error) {
+      console.error('Error fetching weather data:', error);
+      return null;
+    }
+  }
+
+  private async parseForcastData(response: any, city: string): Promise<Weather[] | null> {
+    if (!response.list) {
+      console.error('Invalid weather response:', response);
+      return null;
+    }
+
+    const forecast: Weather[] = []
+
+    const forecasData = response.list;
+    let lastDateRecorded: Date | undefined = undefined
+    await forecasData.forEach((weatherData: any) => {
+      const date = new Date(weatherData.dt * 1000);
+      if(date.getDay() != lastDateRecorded?.getDay()) {
+        const weather = new Weather(
+          city,
+          date.toDateString(),
+          weatherData?.main?.temp,
+          weatherData?.main?.temp,
+          weatherData?.main?.temp,
+          weatherData?.weather[0]?.icon,
+          weatherData?.weather[0]?.description,
+        )
+        lastDateRecorded = date;
+        forecast.push(weather)
+      }
+    })  
+    return forecast 
+  }
+
+  async getWeatherForCity(city: string): Promise<Weather[] | null> {
+    const coordinates = await this.fetchLocationData(city);
+    if (!coordinates) {
+      console.error(`Could not fetch coordinates for city: ${city}`);
+      return null;
+    }
+
+    const weatherData = await this.fetchWeatherData(coordinates);
+    if (!weatherData) {
+      console.error(`Could not fetch weather data for city: ${city}`);
+      return null;
+    }
+  
+    return await this.parseForcastData(weatherData, city);
 }
-
+}
 export default new WeatherService();
